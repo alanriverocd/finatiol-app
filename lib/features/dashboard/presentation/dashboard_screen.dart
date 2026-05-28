@@ -753,6 +753,11 @@ class _AdaptiveDrawer extends StatelessWidget {
               label: 'Pedidos admin',
               route: '/solicitudes-admin',
             ),
+          const _DrawerItem(
+            icon: Icons.smart_toy_outlined,
+            label: 'OpenAI Man',
+            route: '/openai-man',
+          ),
           if (!isCustomer || isAdmin)
             const _DrawerItem(
               icon: Icons.people_outline,

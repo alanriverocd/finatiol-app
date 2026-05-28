@@ -19,6 +19,7 @@ import '../../features/caja_ahorro/presentation/semanas_screen.dart';
 import '../../features/marketing/presentation/brand_intro_screen.dart';
 import '../../features/marketing/presentation/product_checkout_screen.dart';
 import '../../features/marketing/presentation/product_showcase_screen.dart';
+import '../../features/openai_man/presentation/openai_man_screen.dart';
 import '../../features/solicitudes/presentation/admin_solicitudes_screen.dart';
 import '../../features/solicitudes/presentation/mis_solicitudes_screen.dart';
 
@@ -99,6 +100,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/solicitudes-admin',
         builder: (context, state) => const AdminSolicitudesScreen(),
+      ),
+      GoRoute(
+        path: '/openai-man',
+        builder: (context, state) => const OpenAiManScreen(),
       ),
       GoRoute(
         path: '/productos',

@@ -33,6 +33,8 @@ dependencies:
   intl: ^0.20.2
   equatable: ^2.0.7
   image_picker: ^1.1.2
+  speech_to_text: ^7.4.0
+  flutter_tts: ^4.0.2
 
 dev_dependencies:
   flutter_test:
