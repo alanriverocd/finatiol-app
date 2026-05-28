@@ -71,10 +71,10 @@ class _AdminSolicitudesScreenState extends ConsumerState<AdminSolicitudesScreen>
       if (!mounted) return;
       ref.invalidate(adminSolicitudesProvider);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Solicitud #${solicitud.id} actualizada a $estado')),
+        SnackBar(content: Text('Pedido #${solicitud.id} actualizado a $estado')),
       );
     } on DioException catch (e) {
-      String msg = 'No se pudo actualizar la solicitud';
+      String msg = 'No se pudo actualizar el pedido';
       final raw = e.response?.data;
       if (raw is Map<String, dynamic>) {
         final candidate = raw['message'] ?? raw['mensaje'] ?? raw['error'];
@@ -97,7 +97,7 @@ class _AdminSolicitudesScreenState extends ConsumerState<AdminSolicitudesScreen>
 
     return Scaffold(
       appBar: FinatiolAppBar(
-        title: const Text('Administrar solicitudes'),
+        title: const Text('Administrar pedidos'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -116,7 +116,7 @@ class _AdminSolicitudesScreenState extends ConsumerState<AdminSolicitudesScreen>
               Icon(Icons.cloud_off_outlined, size: 56, color: Colors.grey.shade400),
               const SizedBox(height: 12),
               const Text(
-                'No se pudieron cargar las solicitudes',
+                'No se pudieron cargar los pedidos',
                 textAlign: TextAlign.center,
               ),
             ],
@@ -129,7 +129,7 @@ class _AdminSolicitudesScreenState extends ConsumerState<AdminSolicitudesScreen>
                   Icon(Icons.assignment_outlined, size: 56, color: Colors.grey.shade400),
                   const SizedBox(height: 12),
                   const Text(
-                    'No hay solicitudes pendientes de gestión.',
+                    'No hay pedidos pendientes de gestion.',
                     textAlign: TextAlign.center,
                   ),
                 ],

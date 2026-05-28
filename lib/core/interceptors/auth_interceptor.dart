@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import '../constants/app_constants.dart';
 import '../storage/token_storage.dart';
 
 /// Interceptor que agrega el Bearer token a cada request
@@ -8,13 +9,25 @@ class AuthInterceptor extends Interceptor {
 
   final TokenStorage _storage;
 
+  bool _isPublicPath(String path) {
+    return path.startsWith(AppConstants.loginEndpoint) ||
+        path.startsWith(AppConstants.registerEndpoint) ||
+        path.startsWith(AppConstants.refreshEndpoint);
+  }
+
   @override
   Future<void> onRequest(
     RequestOptions options,
     RequestInterceptorHandler handler,
   ) async {
+    if (_isPublicPath(options.path)) {
+      options.headers.remove('Authorization');
+      handler.next(options);
+      return;
+    }
+
     final token = await _storage.getAccessToken();
-    if (token != null) {
+    if (token != null && token.trim().isNotEmpty) {
       options.headers['Authorization'] = 'Bearer $token';
     }
     handler.next(options);

@@ -87,7 +87,7 @@ class _BrandIntroScreenState extends State<BrandIntroScreen>
                   child: child,
                 ),
                 child: const Icon(
-                  Icons.savings_outlined,
+                  Icons.shopping_bag_outlined,
                   size: 150,
                   color: Colors.white24,
                 ),
@@ -114,11 +114,12 @@ class _BrandIntroScreenState extends State<BrandIntroScreen>
                         child: const Stack(
                           alignment: Alignment.center,
                           children: [
-                            Icon(Icons.pets, size: 56, color: Color(0xFF103D7A)),
+                            Icon(Icons.storefront_outlined,
+                                size: 56, color: Color(0xFF103D7A)),
                             Positioned(
                               bottom: 12,
                               child: Icon(
-                                Icons.account_balance,
+                                Icons.devices_other_outlined,
                                 size: 24,
                                 color: Color(0xFFC79A3B),
                               ),
@@ -137,14 +138,14 @@ class _BrandIntroScreenState extends State<BrandIntroScreen>
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'La mascota financiera que cuida tu futuro',
+                        'Tu vitrina digital para tecnologia, linea blanca y mas',
                         style: theme.textTheme.titleMedium?.copyWith(
                           color: Colors.white.withValues(alpha: 0.88),
                         ),
                       ),
                       const SizedBox(height: 18),
                       Text(
-                        'by FINATIOL',
+                        'Comercio inteligente by FINATIOL',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: Colors.white70,
                           letterSpacing: 1.4,

@@ -709,7 +709,7 @@ class _AdaptiveDrawer extends StatelessWidget {
                 Text('FINATIOL',
                     style: theme.textTheme.titleLarge?.copyWith(
                         color: Colors.white, fontWeight: FontWeight.bold)),
-                Text(isCustomer && !isAdmin ? 'Portal de ahorro' : 'Plataforma empresarial',
+                Text(isCustomer && !isAdmin ? 'Portal comercial' : 'Plataforma empresarial',
                     style: theme.textTheme.bodySmall
                         ?.copyWith(color: Colors.white70)),
               ],
@@ -744,13 +744,13 @@ class _AdaptiveDrawer extends StatelessWidget {
           ),
           const _DrawerItem(
             icon: Icons.assignment_turned_in_outlined,
-            label: 'Mis solicitudes',
+            label: 'Mis pedidos',
             route: '/mis-solicitudes',
           ),
           if (isAdmin)
             const _DrawerItem(
               icon: Icons.manage_accounts_outlined,
-              label: 'Solicitudes admin',
+              label: 'Pedidos admin',
               route: '/solicitudes-admin',
             ),
           if (!isCustomer || isAdmin)

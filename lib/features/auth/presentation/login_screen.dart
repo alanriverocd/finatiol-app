@@ -129,7 +129,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                     ),
                                     const SizedBox(height: 8),
                                     Text(
-                                      'Ingresa para consultar dashboards, movimientos y expedientes financieros.',
+                                      'Ingresa para consultar pedidos, catalogo y seguimiento comercial.',
                                       style: theme.textTheme.bodyMedium?.copyWith(
                                         color: theme.colorScheme.onSurfaceVariant,
                                       ),
@@ -341,7 +341,7 @@ class _FinatiolLogo extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          'Banca digital y operación financiera',
+          'Comercio digital de productos multirubro',
           style: theme.textTheme.bodySmall?.copyWith(
             color: Colors.grey.shade500,
             letterSpacing: 0.5,
@@ -368,13 +368,13 @@ class _LoginHeroPanel extends StatelessWidget {
             borderRadius: BorderRadius.circular(999),
           ),
           child: const Text(
-            'Portal bancario interno',
+            'Portal comercial interno',
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
           ),
         ),
         const SizedBox(height: 22),
         const Text(
-          'Controla ahorro, clientes y operación con una interfaz de nivel institucional.',
+          'Gestiona ventas de tecnología, línea blanca y más en una sola plataforma empresarial.',
           style: TextStyle(
             color: Colors.white,
             fontSize: 34,
@@ -384,7 +384,7 @@ class _LoginHeroPanel extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         Text(
-          'Monitorea movimientos, pagos semanales atrasados e invitaciones de acceso desde un flujo unificado.',
+          'Controla catálogo, inventario, pedidos y atención comercial desde un flujo operativo unificado.',
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.82),
             fontSize: 15,
@@ -393,21 +393,21 @@ class _LoginHeroPanel extends StatelessWidget {
         ),
         const SizedBox(height: 28),
         const _HeroFeature(
-          icon: Icons.savings_outlined,
-          title: 'Caja de ahorro operativa',
-          subtitle: 'Alta de clientes, apertura de cuentas y consulta de movimientos.',
+          icon: Icons.inventory_2_outlined,
+          title: 'Catálogo multirubro',
+          subtitle: 'Administra productos de tecnología, línea blanca, hogar y otras categorías.',
         ),
         const SizedBox(height: 14),
         const _HeroFeature(
-          icon: Icons.notifications_active_outlined,
-          title: 'Alertas por pago atrasado',
-          subtitle: 'Recordatorios automáticos desde el martes sobre semanas pendientes.',
+          icon: Icons.local_shipping_outlined,
+          title: 'Pedidos y logística',
+          subtitle: 'Da seguimiento a órdenes, entregas y estado de compra en tiempo real.',
         ),
         const SizedBox(height: 14),
         const _HeroFeature(
           icon: Icons.shield_outlined,
           title: 'Acceso seguro',
-          subtitle: 'Sesión protegida para usuarios administrativos e invitados.',
+          subtitle: 'Sesión protegida para equipos comerciales, administrativos e invitados.',
         ),
       ],
     );

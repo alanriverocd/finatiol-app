@@ -12,54 +12,6 @@ final marketingProductsProvider = FutureProvider<List<Producto>>((ref) async {
 class ProductShowcaseScreen extends ConsumerWidget {
   const ProductShowcaseScreen({super.key});
 
-  static const _fallbackProducts = <_PromoProduct>[
-    _PromoProduct(
-      name: 'Cuenta Digital Plus',
-      tag: 'Mas solicitado',
-      headline: 'Rendimientos diarios y control total desde app',
-      description:
-          'Ideal para clientes que buscan liquidez inmediata con beneficios premium.',
-      monthlyFrom: 'Desde 0 comision mensual',
-      benefits: [
-        'Transferencias SPEI 24/7',
-        'Rendimiento diario sobre saldo',
-        'Tarjeta virtual y alertas instantaneas',
-      ],
-      icon: Icons.account_balance_wallet_outlined,
-      accent: Color(0xFF174A92),
-    ),
-    _PromoProduct(
-      name: 'Crédito Impulso PyME',
-      tag: 'Para negocio',
-      headline: 'Capital para crecer con tasa competitiva',
-      description:
-          'Financia inventario, nómina o expansión con aprobación ágil.',
-      monthlyFrom: 'Respuesta inicial en 24h habiles',
-      benefits: [
-        'Montos escalables segun historial',
-        'Pagos semanales o quincenales',
-        'Acompañamiento comercial especializado',
-      ],
-      icon: Icons.storefront_outlined,
-      accent: Color(0xFF0E7A5F),
-    ),
-    _PromoProduct(
-      name: 'Caja Ahorro Familiar',
-      tag: 'Meta familiar',
-      headline: 'Ahorro semanal con metas y alertas inteligentes',
-      description:
-          'Programa aportaciones y mantén seguimiento de progreso familiar.',
-      monthlyFrom: 'Plan desde 100 semanales',
-      benefits: [
-        'Metas por integrante',
-        'Recordatorios automaticos',
-        'Historial claro de aportaciones',
-      ],
-      icon: Icons.savings_outlined,
-      accent: Color(0xFF9A6A13),
-    ),
-  ];
-
   List<_PromoProduct> _toMarketingProducts(List<Producto> productos) {
     final ordered = [...productos]
       ..sort((a, b) {
@@ -74,13 +26,13 @@ class ProductShowcaseScreen extends ConsumerWidget {
       final accent = _accentForName(producto.nombre);
       final descripcion = (producto.descripcion ?? '').trim();
       final headline = descripcion.isEmpty
-          ? 'Producto financiero para impulsar tus objetivos.'
+          ? 'Producto destacado para impulsar tus ventas.'
           : descripcion.split('.').first.trim();
 
       final benefits = <String>[
         'Disponibilidad actual: ${producto.stock} unidades',
         'Seguimiento comercial por correo y telefono',
-        'Solicitud en linea con respuesta rapida',
+        'Pedido en linea con respuesta rapida',
       ];
 
       return _PromoProduct(
@@ -109,6 +61,26 @@ class ProductShowcaseScreen extends ConsumerWidget {
     return (p.stock * 1.0) + (p.precio * 0.05);
   }
 
+  List<_TrustPill> _buildTrustPills(List<Producto> productos) {
+    if (productos.isEmpty) {
+      return const [
+        _TrustPill(text: 'Catalogo activo: 0 productos'),
+      ];
+    }
+
+    final totalStock = productos.fold<int>(0, (acc, p) => acc + p.stock);
+    final desdePrecio = productos
+        .map((p) => p.precio)
+        .reduce((a, b) => a < b ? a : b)
+        .toStringAsFixed(2);
+
+    return [
+      _TrustPill(text: 'Catalogo activo: ${productos.length} productos'),
+      _TrustPill(text: 'Stock disponible: $totalStock unidades'),
+      _TrustPill(text: 'Opciones desde $desdePrecio'),
+    ];
+  }
+
   Color _accentForName(String name) {
     final lower = name.toLowerCase();
     if (lower.contains('credito') || lower.contains('prestamo')) {
@@ -135,15 +107,10 @@ class ProductShowcaseScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final productsAsync = ref.watch(marketingProductsProvider);
-
-    final products = productsAsync.when(
-      data: (items) {
-        if (items.isEmpty) return _fallbackProducts;
-        return _toMarketingProducts(items);
-      },
-      loading: () => _fallbackProducts,
-      error: (error, stackTrace) => _fallbackProducts,
-    );
+    final rawProducts = productsAsync.valueOrNull ?? const <Producto>[];
+    final products = _toMarketingProducts(rawProducts);
+    final isLoading = productsAsync.isLoading && rawProducts.isEmpty;
+    final hasError = productsAsync.hasError;
 
     return Scaffold(
       body: Container(
@@ -184,7 +151,7 @@ class ProductShowcaseScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Impulsa tus metas con soluciones financieras diseñadas para vender más y ahorrar mejor.',
+                      'Impulsa tus metas con tecnologia, linea blanca y productos para cada tipo de cliente.',
                       style: theme.textTheme.headlineSmall?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.w700,
@@ -203,11 +170,7 @@ class ProductShowcaseScreen extends ConsumerWidget {
                     Wrap(
                       spacing: 12,
                       runSpacing: 12,
-                      children: const [
-                        _TrustPill(text: '+15k clientes activos'),
-                        _TrustPill(text: '98% renovacion anual'),
-                        _TrustPill(text: 'Atencion comercial dedicada'),
-                      ],
+                      children: _buildTrustPills(rawProducts),
                     ),
                     const SizedBox(height: 18),
                     Wrap(
@@ -251,12 +214,32 @@ class ProductShowcaseScreen extends ConsumerWidget {
                 style: theme.textTheme.bodyMedium,
               ),
               const SizedBox(height: 14),
-              ...products.map(
-                (product) => Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: _PromoCard(product: product),
+              if (isLoading)
+                const Padding(
+                  padding: EdgeInsets.only(top: 12),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (hasError)
+                const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('No se pudo cargar el catalogo. Intenta de nuevo.'),
+                  ),
+                )
+              else if (products.isEmpty)
+                const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('No hay productos activos para mostrar en este momento.'),
+                  ),
+                )
+              else
+                ...products.map(
+                  (product) => Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: _PromoCard(product: product),
+                  ),
                 ),
-              ),
             ],
           ),
         ),

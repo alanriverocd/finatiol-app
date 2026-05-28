@@ -33,17 +33,17 @@ class _ProductCheckoutScreenState extends ConsumerState<ProductCheckoutScreen> {
             AppConstants.solicitudesEndpoint,
             data: {
               'producto': selectedProduct,
-              'comentario': 'Solicitud generada desde escaparate comercial',
+              'comentario': 'Pedido generado desde escaparate comercial',
             },
           );
 
       if (!mounted) return;
       setState(() => _sent = true);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Solicitud enviada para $selectedProduct')),
+        SnackBar(content: Text('Pedido enviado para $selectedProduct')),
       );
     } on DioException catch (e) {
-      String message = 'No se pudo enviar la solicitud';
+      String message = 'No se pudo enviar el pedido';
       final data = e.response?.data;
       if (data is Map<String, dynamic>) {
         final candidate = data['message'] ?? data['mensaje'] ?? data['error'];
@@ -56,7 +56,7 @@ class _ProductCheckoutScreenState extends ConsumerState<ProductCheckoutScreen> {
       setState(() => _error = message);
     } catch (_) {
       if (!mounted) return;
-      setState(() => _error = 'Error inesperado al enviar solicitud');
+      setState(() => _error = 'Error inesperado al enviar el pedido');
     } finally {
       if (mounted) {
         setState(() => _sending = false);
@@ -71,7 +71,7 @@ class _ProductCheckoutScreenState extends ConsumerState<ProductCheckoutScreen> {
 
     return Scaffold(
       appBar: const FinatiolAppBar(
-        title: Text('Solicitud de producto'),
+        title: Text('Confirmacion de pedido'),
         includeHomeAction: false,
       ),
       body: Container(
@@ -120,8 +120,8 @@ class _ProductCheckoutScreenState extends ConsumerState<ProductCheckoutScreen> {
                       const SizedBox(height: 8),
                       Text(
                         selectedProduct.isEmpty
-                            ? 'Explora el escaparate para elegir una opción y continuar con tu contratación.'
-                            : 'Confirma tu interés y un asesor de FINATIOL te dará seguimiento.',
+                            ? 'Explora el escaparate para elegir una opcion y continuar con tu compra.'
+                            : 'Confirma tu pedido y el equipo comercial de FINATIOL te dara seguimiento.',
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: Colors.white.withValues(alpha: 0.88),
                           height: 1.45,
@@ -148,17 +148,17 @@ class _ProductCheckoutScreenState extends ConsumerState<ProductCheckoutScreen> {
                       const SizedBox(height: 12),
                       const _StepRow(
                         index: '1',
-                        text: 'Tu solicitud queda registrada con tu sesión actual.',
+                        text: 'Tu pedido queda registrado con tu sesion actual.',
                       ),
                       const SizedBox(height: 8),
                       const _StepRow(
                         index: '2',
-                        text: 'Recibirás un contacto comercial por correo.',
+                        text: 'Recibiras un contacto comercial por correo.',
                       ),
                       const SizedBox(height: 8),
                       const _StepRow(
                         index: '3',
-                        text: 'Se valida documentación y se formaliza contratación.',
+                        text: 'Se valida la disponibilidad y se coordina la entrega.',
                       ),
                     ],
                   ),
@@ -179,7 +179,7 @@ class _ProductCheckoutScreenState extends ConsumerState<ProductCheckoutScreen> {
                           color: Colors.white,
                         ),
                       )
-                    : Text(_sent ? 'Solicitud confirmada' : 'Confirmar solicitud'),
+                    : Text(_sent ? 'Pedido confirmado' : 'Confirmar pedido'),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 10),
@@ -196,7 +196,7 @@ class _ProductCheckoutScreenState extends ConsumerState<ProductCheckoutScreen> {
                 FilledButton.tonalIcon(
                   onPressed: () => context.go('/mis-solicitudes'),
                   icon: const Icon(Icons.assignment_turned_in_outlined),
-                  label: const Text('Ver mis solicitudes'),
+                  label: const Text('Ver mis pedidos'),
                 ),
               ],
               const SizedBox(height: 10),

@@ -49,7 +49,7 @@ class _MisSolicitudesScreenState extends ConsumerState<MisSolicitudesScreen> {
 
     return Scaffold(
       appBar: FinatiolAppBar(
-        title: const Text('Mis solicitudes'),
+        title: const Text('Mis pedidos'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -63,7 +63,7 @@ class _MisSolicitudesScreenState extends ConsumerState<MisSolicitudesScreen> {
         child: solicitudesAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) => _ErrorState(
-            message: 'No se pudieron cargar tus solicitudes',
+            message: 'No se pudieron cargar tus pedidos',
             onRetry: () => ref.invalidate(misSolicitudesProvider),
           ),
           data: (solicitudes) {
@@ -248,7 +248,7 @@ class _NoResultsState extends StatelessWidget {
                 size: 40, color: Colors.grey.shade500),
             const SizedBox(height: 10),
             Text(
-              'No hay solicitudes con estado ${_label(filter)}.',
+              'No hay pedidos con estado ${_label(filter)}.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.titleMedium,
             ),
@@ -283,7 +283,7 @@ class _SolicitudDetalleScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: const FinatiolAppBar(
-        title: Text('Detalle de solicitud'),
+        title: Text('Detalle de pedido'),
         includeHomeAction: false,
       ),
       body: ListView(
@@ -306,7 +306,7 @@ class _SolicitudDetalleScreen extends StatelessWidget {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      _MetaChip(label: 'Solicitud #${solicitud.id}'),
+                      _MetaChip(label: 'Pedido #${solicitud.id}'),
                       _MetaChip(label: 'Estado: $statusUpper'),
                     ],
                   ),
@@ -361,7 +361,7 @@ class _SolicitudDetalleScreen extends StatelessWidget {
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                   SizedBox(height: 8),
-                  Text('Tu solicitud está en seguimiento comercial. Te contactaremos por correo o teléfono.'),
+                  Text('Tu pedido esta en seguimiento comercial. Te contactaremos por correo o telefono.'),
                 ],
               ),
             ),
@@ -437,7 +437,7 @@ class _EmptyState extends StatelessWidget {
         Icon(Icons.inbox_outlined, size: 56, color: Colors.grey.shade400),
         const SizedBox(height: 14),
         Text(
-          'Aún no tienes solicitudes registradas.',
+          'Aun no tienes pedidos registrados.',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.titleMedium,
         ),
