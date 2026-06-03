@@ -1,7 +1,6 @@
 import 'package:dio/dio.dart';
 import '../../../core/constants/app_constants.dart';
 import '../domain/venta_model.dart';
-
 class VentaRepository {
   const VentaRepository(this._dio);
 
@@ -92,4 +91,43 @@ class VentaRepository {
     final response = await _dio.get('${AppConstants.ventasEndpoint}/resumen');
     return (response.data as num).toDouble();
   }
+
+  // ---- pagos ---------------------------------------------------------------
+
+  /// POST /ventas/{id}/pagos
+  Future<PagoVenta> registrarPago(int ventaId, PagoVentaRequest request) async {
+    final response = await _dio.post(
+      '${AppConstants.ventasEndpoint}/$ventaId/pagos',
+      data: request.toJson(),
+    );
+    return PagoVenta.fromJson(response.data['data'] as Map<String, dynamic>);
+  }
+
+  /// GET /ventas/{id}/pagos
+  Future<List<PagoVenta>> listarPagos(int ventaId) async {
+    final response =
+        await _dio.get('${AppConstants.ventasEndpoint}/$ventaId/pagos');
+    final List<dynamic> data = response.data['data'] as List<dynamic>;
+    return data
+        .map((e) => PagoVenta.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// GET /ventas/{id}/saldo
+  Future<SaldoVenta> obtenerSaldo(int ventaId) async {
+    final response =
+        await _dio.get('${AppConstants.ventasEndpoint}/$ventaId/saldo');
+    return SaldoVenta.fromJson(response.data['data'] as Map<String, dynamic>);
+  }
+
+  /// GET /ventas/con-pendientes
+  Future<List<SaldoVenta>> ventasConPendiente() async {
+    final response =
+        await _dio.get('${AppConstants.ventasEndpoint}/con-pendientes');
+    final List<dynamic> data = response.data['data'] as List<dynamic>;
+    return data
+        .map((e) => SaldoVenta.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
 }
+

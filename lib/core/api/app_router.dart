@@ -6,6 +6,8 @@ import '../../features/auth/presentation/register_screen.dart';
 import '../../features/dashboard/presentation/dashboard_screen.dart';
 import '../../features/productos/presentation/productos_screen.dart';
 import '../../features/ventas/presentation/ventas_screen.dart';
+import '../../features/ventas/presentation/pagos_screen.dart';
+import '../../features/ventas/presentation/cobros_screen.dart';
 import '../../features/finanzas/presentation/finanzas_screen.dart';
 import '../../features/usuarios/presentation/usuarios_screen.dart';
 import '../../features/configuracion/presentation/configuracion_screen.dart';
@@ -113,6 +115,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/ventas',
         builder: (context, state) => const VentasScreen(),
+      ),
+      GoRoute(
+        path: '/ventas/:id/pagos',
+        builder: (context, state) => PagosVentaScreen(
+          ventaId: int.parse(state.pathParameters['id']!),
+        ),
+      ),
+      GoRoute(
+        path: '/cobros',
+        builder: (context, state) => const CobrosScreen(),
       ),
       GoRoute(
         path: '/finanzas',

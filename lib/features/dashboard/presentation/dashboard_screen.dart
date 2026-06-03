@@ -732,6 +732,11 @@ class _AdaptiveDrawer extends StatelessWidget {
               route: '/ventas',
             ),
             const _DrawerItem(
+              icon: Icons.payments_outlined,
+              label: 'Cobros',
+              route: '/cobros',
+            ),
+            const _DrawerItem(
               icon: Icons.account_balance_wallet_outlined,
               label: 'Finanzas',
               route: '/finanzas',

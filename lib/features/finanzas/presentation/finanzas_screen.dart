@@ -61,6 +61,17 @@ class _FinanzasScreenState extends ConsumerState<FinanzasScreen> {
         title: const Text('Finanzas'),
         actions: [
           IconButton(
+            icon: state.isClosing
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.archive_outlined),
+            tooltip: 'Cerrar mes',
+            onPressed: state.isClosing ? null : () => _confirmarCierre(context),
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Actualizar',
             onPressed: () => ref.read(finanzasProvider.notifier).cargar(),
@@ -76,6 +87,10 @@ class _FinanzasScreenState extends ConsumerState<FinanzasScreen> {
                   // Tarjetas resumen
                   SliverToBoxAdapter(
                     child: _ResumenCards(state: state),
+                  ),
+
+                  SliverToBoxAdapter(
+                    child: _HistorialMensual(historial: state.historial),
                   ),
 
                   // Filtro
@@ -122,6 +137,36 @@ class _FinanzasScreenState extends ConsumerState<FinanzasScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const MovimientoFormScreen()),
     );
+  }
+
+  Future<void> _confirmarCierre(BuildContext context) async {
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cerrar mes'),
+        content: const Text(
+          'Se guardará el resumen mensual y se limpiarán los ingresos del mes. Los egresos permanecerán activos.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Cerrar mes'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmado != true || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await _finanzasNotifier.cerrarMes();
+    if (!ok || !context.mounted) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('Mes cerrado correctamente')));
   }
 }
 
@@ -242,6 +287,77 @@ class _SummaryCard extends StatelessWidget {
                           color: color)),
                 ],
               ),
+      ),
+    );
+  }
+}
+
+class _HistorialMensual extends StatelessWidget {
+  const _HistorialMensual({required this.historial});
+
+  final List<ResumenMensual> historial;
+
+  static const _meses = [
+    '',
+    'Enero',
+    'Febrero',
+    'Marzo',
+    'Abril',
+    'Mayo',
+    'Junio',
+    'Julio',
+    'Agosto',
+    'Septiembre',
+    'Octubre',
+    'Noviembre',
+    'Diciembre',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    if (historial.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Card(
+        child: ExpansionTile(
+          leading: const Icon(Icons.history_outlined),
+          title: const Text('Histórico mensual'),
+          subtitle: Text('${historial.length} cierres guardados'),
+          children: historial
+              .take(6)
+              .map((resumen) => ListTile(
+                    title: Text('${_meses[resumen.mes]} ${resumen.anio}'),
+                    subtitle: Text(
+                      'Cierre: ${FormatUtils.dateTime(resumen.fechaCierre)}',
+                    ),
+                    trailing: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          FormatUtils.currency(resumen.balance),
+                          style: TextStyle(
+                            color: resumen.balance >= 0
+                                ? Colors.green.shade700
+                                : Colors.red.shade700,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          'I ${FormatUtils.currency(resumen.totalIngresos)}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ))
+              .toList(),
+        ),
       ),
     );
   }

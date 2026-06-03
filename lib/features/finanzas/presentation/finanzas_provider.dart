@@ -21,6 +21,8 @@ class FinanzasState {
     this.totalIngresos = 0,
     this.totalEgresos = 0,
     this.balance = 0,
+    this.historial = const [],
+    this.isClosing = false,
   });
 
   final List<Movimiento> movimientos;
@@ -29,6 +31,8 @@ class FinanzasState {
   final double totalIngresos;
   final double totalEgresos;
   final double balance;
+  final List<ResumenMensual> historial;
+  final bool isClosing;
 
   FinanzasState copyWith({
     List<Movimiento>? movimientos,
@@ -37,6 +41,8 @@ class FinanzasState {
     double? totalIngresos,
     double? totalEgresos,
     double? balance,
+    List<ResumenMensual>? historial,
+    bool? isClosing,
     bool clearError = false,
   }) =>
       FinanzasState(
@@ -46,6 +52,8 @@ class FinanzasState {
         totalIngresos: totalIngresos ?? this.totalIngresos,
         totalEgresos: totalEgresos ?? this.totalEgresos,
         balance: balance ?? this.balance,
+        historial: historial ?? this.historial,
+        isClosing: isClosing ?? this.isClosing,
       );
 }
 
@@ -65,12 +73,14 @@ class FinanzasNotifier extends StateNotifier<FinanzasState> {
         _repo.totalIngresos(),
         _repo.totalEgresos(),
         _repo.resumenBalance(),
+        _repo.historialMensual(),
       ]);
       state = state.copyWith(
         movimientos: results[0] as List<Movimiento>,
         totalIngresos: results[1] as double,
         totalEgresos: results[2] as double,
         balance: results[3] as double,
+        historial: results[4] as List<ResumenMensual>,
         isLoading: false,
       );
     } catch (e) {
@@ -99,6 +109,22 @@ class FinanzasNotifier extends StateNotifier<FinanzasState> {
     } catch (e) {
       state =
           state.copyWith(error: 'Error al registrar movimiento: $e');
+      return false;
+    }
+  }
+
+  Future<bool> cerrarMes() async {
+    state = state.copyWith(isClosing: true, clearError: true);
+    try {
+      await _repo.cerrarMes();
+      await cargar();
+      state = state.copyWith(isClosing: false);
+      return true;
+    } catch (e) {
+      state = state.copyWith(
+        isClosing: false,
+        error: 'Error al cerrar mes: $e',
+      );
       return false;
     }
   }

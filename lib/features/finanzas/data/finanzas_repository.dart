@@ -51,4 +51,20 @@ class FinanzasRepository {
     final response = await _dio.get('${AppConstants.finanzasEndpoint}/resumen');
     return (response.data as num).toDouble();
   }
+
+  Future<List<ResumenMensual>> historialMensual() async {
+    final response =
+        await _dio.get('${AppConstants.finanzasEndpoint}/historial');
+    final List<dynamic> data = response.data['data'] as List<dynamic>;
+    return data
+        .map((e) => ResumenMensual.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<ResumenMensual> cerrarMes() async {
+    final response =
+        await _dio.post('${AppConstants.finanzasEndpoint}/cerrar-mes');
+    return ResumenMensual.fromJson(
+        response.data['data'] as Map<String, dynamic>);
+  }
 }
