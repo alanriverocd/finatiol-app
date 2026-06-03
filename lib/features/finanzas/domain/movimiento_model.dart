@@ -72,3 +72,33 @@ class MovimientoRequest {
           'referencia': referencia,
       };
 }
+
+class ResumenMensual {
+  const ResumenMensual({
+    required this.id,
+    required this.mes,
+    required this.anio,
+    required this.totalIngresos,
+    required this.totalEgresos,
+    required this.balance,
+    required this.fechaCierre,
+  });
+
+  final int id;
+  final int mes;
+  final int anio;
+  final double totalIngresos;
+  final double totalEgresos;
+  final double balance;
+  final DateTime fechaCierre;
+
+  factory ResumenMensual.fromJson(Map<String, dynamic> json) => ResumenMensual(
+        id: (json['id'] as num).toInt(),
+        mes: (json['mes'] as num).toInt(),
+        anio: (json['anio'] as num).toInt(),
+        totalIngresos: (json['totalIngresos'] as num).toDouble(),
+        totalEgresos: (json['totalEgresos'] as num).toDouble(),
+        balance: (json['balance'] as num).toDouble(),
+        fechaCierre: DateTime.parse(json['fechaCierre'] as String),
+      );
+}

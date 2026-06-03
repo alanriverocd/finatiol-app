@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../shared/utils/format_utils.dart';
 import '../../../shared/widgets/finatiol_app_bar.dart';
 import '../domain/venta_model.dart';
@@ -254,6 +255,13 @@ class _VentaCard extends StatelessWidget {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            IconButton(
+              icon: const Icon(Icons.payments_outlined,
+                  color: Colors.teal, size: 20),
+              tooltip: 'Cobros',
+              onPressed: () =>
+                  context.push('/ventas/${venta.id}/pagos'),
+            ),
             IconButton(
               icon: const Icon(Icons.delete_outline,
                   color: Colors.red, size: 20),
