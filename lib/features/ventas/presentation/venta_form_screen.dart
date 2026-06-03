@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/utils/format_utils.dart';
 import '../../../shared/widgets/finatiol_app_bar.dart';
+import '../../usuarios/domain/usuario_model.dart';
+import '../../usuarios/presentation/usuarios_provider.dart';
 import '../domain/venta_model.dart';
 import 'ventas_provider.dart';
 
@@ -11,6 +13,11 @@ import 'ventas_provider.dart';
 final _productosActivosProvider =
     FutureProvider.autoDispose<List<ProductoResumen>>((ref) {
   return ref.watch(ventaRepositoryProvider).productosActivos();
+});
+
+final _usuariosDisponiblesProvider =
+    FutureProvider.autoDispose<List<Usuario>>((ref) {
+  return ref.watch(usuarioRepositoryProvider).listar();
 });
 
 // ---------------------------------------------------------------------------
@@ -28,6 +35,7 @@ class _VentaFormScreenState extends ConsumerState<VentaFormScreen> {
   final _usuarioCtrl = TextEditingController();
   final List<_CartItem> _carrito = [];
   bool _saving = false;
+  Usuario? _usuarioSeleccionado;
 
   @override
   void dispose() {
@@ -69,6 +77,24 @@ class _VentaFormScreenState extends ConsumerState<VentaFormScreen> {
 
   void _removerItem(int index) => setState(() => _carrito.removeAt(index));
 
+  Future<void> _abrirSelectorUsuario() async {
+    final seleccionado = await showModalBottomSheet<Usuario>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => const _UserPickerSheet(),
+    );
+
+    if (seleccionado != null && mounted) {
+      setState(() {
+        _usuarioSeleccionado = seleccionado;
+        _usuarioCtrl.text = seleccionado.username;
+      });
+    }
+  }
+
   Future<void> _guardar() async {
     if (!_formKey.currentState!.validate()) return;
     if (_carrito.isEmpty) {
@@ -78,10 +104,21 @@ class _VentaFormScreenState extends ConsumerState<VentaFormScreen> {
       );
       return;
     }
+
+    final usuarioSeleccionado = _usuarioSeleccionado;
+    if (usuarioSeleccionado == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selecciona un usuario existente para poder vender'),
+        ),
+      );
+      return;
+    }
+
     setState(() => _saving = true);
 
     final request = VentaRequest(
-      usuario: _usuarioCtrl.text.trim(),
+      usuario: usuarioSeleccionado.username,
       detalles: _carrito
           .map((c) => DetalleVentaRequest(
                 productoId: c.productoId,
@@ -109,6 +146,7 @@ class _VentaFormScreenState extends ConsumerState<VentaFormScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final usuariosAsync = ref.watch(_usuariosDisponiblesProvider);
     return Scaffold(
       appBar: const FinatiolAppBar(title: Text('Nueva venta')),
       body: Form(
@@ -122,17 +160,78 @@ class _VentaFormScreenState extends ConsumerState<VentaFormScreen> {
                   // Campo usuario
                   TextFormField(
                     controller: _usuarioCtrl,
-                    decoration: const InputDecoration(
+                    readOnly: true,
+                    onTap: _abrirSelectorUsuario,
+                    decoration: InputDecoration(
                       labelText: 'Usuario / Vendedor *',
-                      prefixIcon: Icon(Icons.person_outline),
+                      hintText: 'Toca para elegir un usuario existente',
+                      prefixIcon: const Icon(Icons.person_outline),
+                      suffixIcon: usuariosAsync.isLoading
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            )
+                          : _usuarioSeleccionado != null
+                              ? const Icon(Icons.verified_rounded, color: Color(0xFF1B8F5A))
+                              : const Icon(Icons.keyboard_arrow_down_rounded),
                     ),
                     validator: (v) {
                       if (v == null || v.trim().isEmpty) {
-                        return 'El usuario es obligatorio';
+                        return 'Selecciona un usuario';
                       }
                       return null;
                     },
                   ),
+                  if (_usuarioSeleccionado != null) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEAF3FF),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFD5E4FF)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.verified_user_rounded,
+                            color: theme.colorScheme.primary,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              '${_usuarioSeleccionado!.nombre} (@${_usuarioSeleccionado!.username})',
+                              style: TextStyle(
+                                color: theme.colorScheme.onSurface,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _abrirSelectorUsuario,
+                            child: const Text('Cambiar'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else if (usuariosAsync.hasError) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'No se pudo cargar el listado de usuarios.',
+                      style: TextStyle(
+                        color: theme.colorScheme.error,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ] else if (usuariosAsync.isLoading) ...[
+                    const SizedBox(height: 8),
+                    const LinearProgressIndicator(minHeight: 2),
+                  ],
                   const SizedBox(height: 24),
 
                   // Encabezado carrito
@@ -445,6 +544,140 @@ class _ProductPickerSheetState extends ConsumerState<_ProductPickerSheet> {
                 ],
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Hoja de selección de usuario
+// ---------------------------------------------------------------------------
+class _UserPickerSheet extends ConsumerStatefulWidget {
+  const _UserPickerSheet();
+
+  @override
+  ConsumerState<_UserPickerSheet> createState() => _UserPickerSheetState();
+}
+
+class _UserPickerSheetState extends ConsumerState<_UserPickerSheet> {
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final usuariosAsync = ref.watch(_usuariosDisponiblesProvider);
+
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.75,
+      maxChildSize: 0.95,
+      minChildSize: 0.45,
+      builder: (context, scrollCtrl) => Column(
+        children: [
+          const _SheetHandle(),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Seleccionar usuario',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: TextField(
+              controller: _searchCtrl,
+              decoration: const InputDecoration(
+                hintText: 'Buscar por nombre, usuario o email...',
+                prefixIcon: Icon(Icons.search),
+                isDense: true,
+              ),
+              onChanged: (value) => setState(() => _query = value),
+            ),
+          ),
+          Expanded(
+            child: usuariosAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'Error al cargar usuarios: $e',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+              data: (usuarios) {
+                final query = _query.trim().toLowerCase();
+                final filtrados = query.isEmpty
+                    ? usuarios
+                    : usuarios.where((usuario) {
+                        return usuario.nombre.toLowerCase().contains(query) ||
+                            usuario.username.toLowerCase().contains(query) ||
+                            usuario.email.toLowerCase().contains(query);
+                      }).toList();
+
+                if (filtrados.isEmpty) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text(
+                        'No se encontraron usuarios con ese criterio',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  );
+                }
+
+                return ListView.separated(
+                  controller: scrollCtrl,
+                  itemCount: filtrados.length,
+                  separatorBuilder: (context, index) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final usuario = filtrados[index];
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor:
+                            Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+                        child: Text(
+                          (usuario.username.isNotEmpty
+                                  ? usuario.username[0]
+                                  : usuario.nombre[0])
+                              .toUpperCase(),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      title: Text(usuario.nombre),
+                      subtitle: Text('@${usuario.username}  ·  ${usuario.email}'),
+                      trailing: usuario.activo
+                          ? const Icon(Icons.verified_rounded, color: Color(0xFF1B8F5A))
+                          : const Icon(Icons.do_not_disturb_on, color: Colors.orange),
+                      onTap: () => Navigator.pop(context, usuario),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
         ],
       ),
     );

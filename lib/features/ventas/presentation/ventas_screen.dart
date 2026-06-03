@@ -107,17 +107,28 @@ class _VentasScreenState extends ConsumerState<VentasScreen> {
               decoration: InputDecoration(
                 hintText: 'Buscar por usuario o ID...',
                 prefixIcon: const Icon(Icons.search),
-                suffixIcon: _query.isNotEmpty
-                    ? IconButton(
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Buscar en servidor',
+                      icon: const Icon(Icons.travel_explore_outlined),
+                      onPressed: () => _ventasNotifier.buscarRemoto(_query),
+                    ),
+                    if (_query.isNotEmpty)
+                      IconButton(
                         icon: const Icon(Icons.clear),
                         onPressed: () {
                           _searchCtrl.clear();
                           setState(() => _query = '');
+                          _ventasNotifier.cargar();
                         },
-                      )
-                    : null,
+                      ),
+                  ],
+                ),
               ),
               onChanged: (v) => setState(() => _query = v),
+              onSubmitted: (v) => _ventasNotifier.buscarRemoto(v),
             ),
           ),
           Expanded(

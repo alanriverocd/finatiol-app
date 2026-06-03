@@ -9,11 +9,15 @@ class FormatUtils {
     decimalDigits: 2,
   );
 
+  static String _twoDigits(int value) => value.toString().padLeft(2, '0');
+
   static String currency(double amount) => _currency.format(amount);
 
-  static String date(DateTime date) =>
-      DateFormat('dd/MM/yyyy', 'es').format(date);
+  static String date(DateTime value) {
+    return '${_twoDigits(value.day)}/${_twoDigits(value.month)}/${value.year}';
+  }
 
-  static String dateTime(DateTime date) =>
-      DateFormat('dd/MM/yyyy HH:mm', 'es').format(date);
+  static String dateTime(DateTime value) {
+    return '${date(value)} ${_twoDigits(value.hour)}:${_twoDigits(value.minute)}';
+  }
 }

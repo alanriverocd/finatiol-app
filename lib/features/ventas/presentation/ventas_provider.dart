@@ -67,6 +67,42 @@ class VentasNotifier extends StateNotifier<VentasState> {
     }
   }
 
+  Future<void> buscarRemoto(String query) async {
+    final value = query.trim();
+    if (value.isEmpty) {
+      await cargar();
+      return;
+    }
+
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final parsedId = int.tryParse(value);
+      if (parsedId != null) {
+        final venta = await _repo.obtener(parsedId);
+        state = state.copyWith(
+          ventas: [venta],
+          totalVentas: venta.total,
+          isLoading: false,
+        );
+        return;
+      }
+
+      final ventas = await _repo.listarPorUsuario(value);
+      final totalFiltrado =
+          ventas.fold<double>(0, (acc, venta) => acc + venta.total);
+      state = state.copyWith(
+        ventas: ventas,
+        totalVentas: totalFiltrado,
+        isLoading: false,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Error al buscar ventas: $e',
+      );
+    }
+  }
+
   Future<bool> crear(VentaRequest request) async {
     try {
       final venta = await _repo.crear(request);

@@ -7,6 +7,8 @@ class DashboardStats extends Equatable {
     required this.totalUsuarios,
     required this.ingresos,
     required this.egresos,
+    this.ventasTotalesMonto = 0,
+    this.balanceCalculado = 0,
     this.ventasPorMes = const [],
   });
 
@@ -15,16 +17,35 @@ class DashboardStats extends Equatable {
   final int totalUsuarios;
   final double ingresos;
   final double egresos;
+  final double ventasTotalesMonto;
+  final double balanceCalculado;
   final List<VentaMes> ventasPorMes;
 
-  double get balance => ingresos - egresos;
+  double get balance {
+    if (ingresos != 0 || egresos != 0) return ingresos - egresos;
+    return balanceCalculado;
+  }
+
+  static int _parseInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse('$value') ?? 0;
+  }
+
+  static double _parseDouble(dynamic value) {
+    if (value is double) return value;
+    if (value is num) return value.toDouble();
+    return double.tryParse('$value') ?? 0;
+  }
 
   factory DashboardStats.fromJson(Map<String, dynamic> json) => DashboardStats(
-        totalVentas: json['totalVentas'] as int? ?? 0,
-        totalProductos: json['totalProductos'] as int? ?? 0,
-        totalUsuarios: json['totalUsuarios'] as int? ?? 0,
-        ingresos: (json['ingresos'] as num?)?.toDouble() ?? 0,
-        egresos: (json['egresos'] as num?)?.toDouble() ?? 0,
+        totalVentas: _parseInt(json['totalVentas'] ?? json['ventasTotales']),
+        totalProductos: _parseInt(json['totalProductos'] ?? json['productosActivos']),
+        totalUsuarios: _parseInt(json['totalUsuarios'] ?? json['usuarios']),
+        ingresos: _parseDouble(json['ingresos']),
+        egresos: _parseDouble(json['egresos']),
+        ventasTotalesMonto: _parseDouble(json['ventasTotales']),
+        balanceCalculado: _parseDouble(json['balance']),
         ventasPorMes: (json['ventasPorMes'] as List<dynamic>? ?? const [])
             .map((item) => VentaMes.fromJson(item as Map<String, dynamic>))
             .toList(),
@@ -32,7 +53,16 @@ class DashboardStats extends Equatable {
 
   @override
   List<Object> get props =>
-      [totalVentas, totalProductos, totalUsuarios, ingresos, egresos, ventasPorMes];
+      [
+        totalVentas,
+        totalProductos,
+        totalUsuarios,
+        ingresos,
+        egresos,
+        ventasTotalesMonto,
+        balanceCalculado,
+        ventasPorMes,
+      ];
 }
 
 class VentaMes extends Equatable {

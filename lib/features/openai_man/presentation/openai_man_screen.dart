@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
@@ -5,6 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:go_router/go_router.dart';
 import 'package:speech_to_text/speech_to_text.dart';
+
+enum _AiResponseMode {
+  localFast,
+  localBalanced,
+  cloudFree,
+}
 
 class OpenAiManScreen extends StatefulWidget {
   const OpenAiManScreen({super.key});
@@ -18,19 +25,46 @@ class _OpenAiManScreenState extends State<OpenAiManScreen>
   final SpeechToText _speech = SpeechToText();
   final FlutterTts _tts = FlutterTts();
   final List<_ChatTurn> _history = <_ChatTurn>[];
+  final List<String> _ollamaBaseUrls = const [
+    'http://127.0.0.1:11434',
+    'http://localhost:11434',
+    'http://10.0.2.2:11434',
+  ];
+  final List<String> _ollamaModelCandidates = const [
+    'qwen2.5:0.5b',
+    'qwen2.5:1.5b',
+    'llama3.2:1b',
+    'llama3.2',
+  ];
 
   late final AnimationController _pulseController;
+  late final Dio _ollamaDio;
+  final TextEditingController _cloudApiKeyCtrl = TextEditingController(
+    text: const String.fromEnvironment('OPENROUTER_API_KEY'),
+  );
 
   bool _speechReady = false;
   bool _isListening = false;
   bool _isSpeaking = false;
   bool _isThinking = false;
   bool _advancedMode = false;
+  bool _continuousMode = true;
+  _AiResponseMode _responseMode = _AiResponseMode.localFast;
+  bool _manualStop = false;
+  bool _autoResuming = false;
+  bool _listenStartInProgress = false;
+  DateTime? _lastListenAttemptAt;
 
   String _recognized = '';
   String _lastHandledPrompt = '';
+  String _activeModel = 'llama3.2';
+  String _activeOllamaBaseUrl = 'http://127.0.0.1:11434';
+  String? _lastAdvancedError;
+  DateTime? _lastOllamaHealthCheckAt;
   String _assistantMessage =
       'OpenAI Man activo. Toca el microfono y habla para iniciar la conversacion.';
+
+  static const bool _perfLogsEnabled = true;
 
   @override
   void initState() {
@@ -39,7 +73,113 @@ class _OpenAiManScreenState extends State<OpenAiManScreen>
       vsync: this,
       duration: const Duration(milliseconds: 980),
     )..repeat();
+
+    _ollamaDio = Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 2),
+        receiveTimeout: const Duration(seconds: 90),
+        sendTimeout: const Duration(seconds: 20),
+      ),
+    );
+
     _setupVoice();
+    _warmupAdvancedMode();
+  }
+
+  Future<void> _warmupAdvancedMode() async {
+    final available = await _discoverOllamaBaseUrl();
+    if (available) {
+      unawaited(_preloadActiveModel());
+    }
+    if (!mounted) return;
+    setState(() {
+      _advancedMode = available;
+      if (available) {
+        _assistantMessage =
+            'OpenAI Man conectado con Ollama. Ya puedo responder de forma mas fluida y de cualquier tema.';
+      }
+    });
+  }
+
+  Future<bool> _discoverOllamaBaseUrl() async {
+    for (final base in _ollamaBaseUrls) {
+      try {
+        final response = await _ollamaDio.get(
+          '$base/api/tags',
+          options: Options(
+            sendTimeout: const Duration(milliseconds: 1200),
+            receiveTimeout: const Duration(milliseconds: 1800),
+          ),
+        );
+
+        if (response.statusCode == 200) {
+          _activeOllamaBaseUrl = base;
+          _activeModel = _selectBestModel(response.data);
+          _lastAdvancedError = null;
+          return true;
+        }
+      } catch (_) {
+        // Try next endpoint.
+      }
+    }
+
+    _lastAdvancedError =
+        'No pude conectar con Ollama en localhost, 127.0.0.1 o 10.0.2.2.';
+    return false;
+  }
+
+  String _selectBestModel(dynamic tagsResponse) {
+    final names = <String>[];
+    if (tagsResponse is Map<String, dynamic>) {
+      final models = tagsResponse['models'];
+      if (models is List) {
+        for (final item in models) {
+          if (item is Map<String, dynamic>) {
+            final name = item['name'];
+            if (name is String && name.trim().isNotEmpty) {
+              names.add(name.trim());
+            }
+          }
+        }
+      }
+    }
+
+    if (names.isEmpty) {
+      return 'llama3.2';
+    }
+
+    for (final preferred in _ollamaModelCandidates) {
+      final match = names.where((m) => m.startsWith(preferred)).toList();
+      if (match.isNotEmpty) {
+        return match.first;
+      }
+    }
+
+    return names.first;
+  }
+
+  Future<void> _preloadActiveModel() async {
+    try {
+      await _ollamaDio.post(
+        '$_activeOllamaBaseUrl/api/generate',
+        data: {
+          'model': _activeModel,
+          'stream': false,
+          'prompt': 'Hola',
+          'keep_alive': '30m',
+          'options': {
+            'num_predict': 8,
+            'temperature': 0.2,
+          }
+        },
+        options: Options(
+          sendTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 40),
+        ),
+      );
+    } catch (_) {
+      // Best effort preload.
+    }
   }
 
   Future<void> _setupVoice() async {
@@ -49,6 +189,14 @@ class _OpenAiManScreenState extends State<OpenAiManScreen>
         final listening = status == 'listening';
         if (_isListening != listening) {
           setState(() => _isListening = listening);
+        }
+
+        if (!listening) {
+          if (_manualStop) {
+            _manualStop = false;
+            return;
+          }
+          _scheduleAutoListening();
         }
       },
       onError: (error) {
@@ -62,6 +210,7 @@ class _OpenAiManScreenState extends State<OpenAiManScreen>
     );
 
     await _tts.setLanguage('es-ES');
+    await _configureFemaleVoice();
     await _tts.setSpeechRate(0.42);
     await _tts.setPitch(1.0);
     await _tts.setVolume(1.0);
@@ -84,6 +233,73 @@ class _OpenAiManScreenState extends State<OpenAiManScreen>
     setState(() => _speechReady = available);
   }
 
+  Future<void> _configureFemaleVoice() async {
+    try {
+      final rawVoices = await _tts.getVoices;
+      if (rawVoices is! List) return;
+
+      final voices = rawVoices.whereType<Map>().map((v) {
+        final name = (v['name'] ?? '').toString();
+        final locale = (v['locale'] ?? '').toString();
+        final gender = (v['gender'] ?? '').toString().toLowerCase();
+        return {
+          'name': name,
+          'locale': locale,
+          'gender': gender,
+          'raw': v,
+        };
+      }).where((v) => (v['name'] as String).isNotEmpty).toList();
+
+      if (voices.isEmpty) return;
+
+      Map<String, dynamic>? pick(List<Map<String, dynamic>> source) {
+        if (source.isEmpty) return null;
+        return source.first;
+      }
+
+      final esFemale = voices.where((v) {
+        final locale = (v['locale'] as String).toLowerCase();
+        final name = (v['name'] as String).toLowerCase();
+        final gender = (v['gender'] as String);
+        final looksFemale = gender.contains('female') ||
+            name.contains('female') ||
+            name.contains('mujer') ||
+            name.contains('paulina') ||
+            name.contains('monica') ||
+            name.contains('helena') ||
+            name.contains('lucia');
+        return locale.startsWith('es') && looksFemale;
+      }).toList();
+
+      final anyFemale = voices.where((v) {
+        final name = (v['name'] as String).toLowerCase();
+        final gender = (v['gender'] as String);
+        return gender.contains('female') ||
+            name.contains('female') ||
+            name.contains('mujer');
+      }).toList();
+
+      final anySpanish = voices.where((v) {
+        final locale = (v['locale'] as String).toLowerCase();
+        return locale.startsWith('es');
+      }).toList();
+
+      final selected = pick(esFemale) ?? pick(anyFemale) ?? pick(anySpanish);
+      if (selected == null) return;
+
+      final raw = selected['raw'];
+      if (raw is Map) {
+        final name = (raw['name'] ?? '').toString();
+        final locale = (raw['locale'] ?? '').toString();
+        if (name.isNotEmpty && locale.isNotEmpty) {
+          await _tts.setVoice({'name': name, 'locale': locale});
+        }
+      }
+    } catch (_) {
+      // Keep default voice if platform does not expose voice metadata.
+    }
+  }
+
   Future<void> _toggleListening() async {
     if (!_speechReady || _isThinking) {
       setState(() {
@@ -94,9 +310,26 @@ class _OpenAiManScreenState extends State<OpenAiManScreen>
     }
 
     if (_isListening) {
+      _manualStop = true;
       await _speech.stop();
       return;
     }
+
+    await _startListening(showPrompt: true);
+  }
+
+  Future<void> _startListening({required bool showPrompt}) async {
+    if (!_speechReady || _isThinking || _isListening || _listenStartInProgress) {
+      return;
+    }
+
+    final now = DateTime.now();
+    if (_lastListenAttemptAt != null &&
+        now.difference(_lastListenAttemptAt!) < const Duration(milliseconds: 700)) {
+      return;
+    }
+    _lastListenAttemptAt = now;
+    _listenStartInProgress = true;
 
     if (_isSpeaking) {
       await _tts.stop();
@@ -104,29 +337,94 @@ class _OpenAiManScreenState extends State<OpenAiManScreen>
 
     setState(() {
       _recognized = '';
-      _assistantMessage = 'Te escucho. Habla ahora.';
+      if (showPrompt) {
+        _assistantMessage = 'Te escucho. Habla ahora.';
+      }
     });
 
-    await _speech.listen(
-      listenOptions: SpeechListenOptions(
-        localeId: 'es_ES',
-        listenFor: const Duration(seconds: 30),
-        pauseFor: const Duration(seconds: 3),
-        partialResults: true,
-      ),
-      onResult: (result) {
+    try {
+      await _speech.listen(
+        listenOptions: SpeechListenOptions(
+          localeId: 'es_ES',
+          listenFor: const Duration(seconds: 30),
+          pauseFor: const Duration(seconds: 3),
+          partialResults: true,
+        ),
+        onResult: (result) {
+          if (!mounted) return;
+          setState(() {
+            _recognized = result.recognizedWords;
+          });
+
+          if (result.finalResult && _recognized.trim().isNotEmpty) {
+            final prompt = _recognized.trim();
+            _speech.stop();
+            _consumePrompt(prompt);
+          }
+        },
+      );
+    } catch (e) {
+      final msg = e.toString().toLowerCase();
+      if (msg.contains('already started') ||
+          msg.contains('recognition has already started')) {
+        try {
+          await _speech.stop();
+          await Future<void>.delayed(const Duration(milliseconds: 180));
+          await _speech.listen(
+            listenOptions: SpeechListenOptions(
+              localeId: 'es_ES',
+              listenFor: const Duration(seconds: 30),
+              pauseFor: const Duration(seconds: 3),
+              partialResults: true,
+            ),
+            onResult: (result) {
+              if (!mounted) return;
+              setState(() {
+                _recognized = result.recognizedWords;
+              });
+
+              if (result.finalResult && _recognized.trim().isNotEmpty) {
+                final prompt = _recognized.trim();
+                _speech.stop();
+                _consumePrompt(prompt);
+              }
+            },
+          );
+        } catch (_) {
+          if (!mounted) return;
+          setState(() {
+            _assistantMessage =
+                'El microfono estaba ocupado. Intenta hablar de nuevo en un segundo.';
+          });
+        }
+      } else {
         if (!mounted) return;
         setState(() {
-          _recognized = result.recognizedWords;
+          _assistantMessage =
+              'No pude iniciar el microfono en este momento. Intenta nuevamente.';
         });
+      }
+    } finally {
+      _listenStartInProgress = false;
+    }
+  }
 
-        if (result.finalResult && _recognized.trim().isNotEmpty) {
-          final prompt = _recognized.trim();
-          _speech.stop();
-          _consumePrompt(prompt);
-        }
-      },
-    );
+  void _scheduleAutoListening() {
+    if (!_continuousMode || !_speechReady || _isSpeaking || _isThinking) {
+      return;
+    }
+    if (_isListening || _autoResuming) return;
+
+    _autoResuming = true;
+    Future<void>.delayed(const Duration(milliseconds: 420), () async {
+      _autoResuming = false;
+      if (!mounted) return;
+      if (!_continuousMode || _isListening || _isSpeaking || _isThinking) {
+        return;
+      }
+
+      await _startListening(showPrompt: false);
+    });
   }
 
   Future<void> _consumePrompt(String prompt) async {
@@ -140,6 +438,8 @@ class _OpenAiManScreenState extends State<OpenAiManScreen>
   Future<void> _handlePrompt(String prompt) async {
     if (_isThinking) return;
 
+    final totalSw = Stopwatch()..start();
+
     setState(() {
       _isThinking = true;
       _assistantMessage = 'Entendido. Dame un instante para responderte mejor.';
@@ -147,7 +447,12 @@ class _OpenAiManScreenState extends State<OpenAiManScreen>
 
     _history.add(_ChatTurn(role: 'user', content: prompt));
 
-    final advancedReply = await _requestAdvancedReply(prompt);
+    String? advancedReply;
+    if (_responseMode == _AiResponseMode.cloudFree) {
+      advancedReply = await _requestCloudFreeReply(prompt);
+    }
+
+    advancedReply ??= await _requestAdvancedReply(prompt);
     final reply = advancedReply ?? _buildLocalReply(prompt);
 
     _history.add(_ChatTurn(role: 'assistant', content: reply));
@@ -162,18 +467,36 @@ class _OpenAiManScreenState extends State<OpenAiManScreen>
     });
 
     await _speakSmooth(reply);
+
+    totalSw.stop();
+    _perfLog('total_respuesta_ms=${totalSw.elapsedMilliseconds} modo=${_advancedMode ? 'avanzado' : 'local'} model=$_activeModel');
   }
 
   Future<String?> _requestAdvancedReply(String prompt) async {
+    final requestSw = Stopwatch()..start();
     try {
-      final dio = Dio(
-        BaseOptions(
-          baseUrl: 'http://127.0.0.1:11434',
-          connectTimeout: const Duration(milliseconds: 900),
-          receiveTimeout: const Duration(seconds: 30),
-          sendTimeout: const Duration(seconds: 20),
-        ),
-      );
+      final now = DateTime.now();
+      final shouldCheckEndpoint = !_advancedMode ||
+          _lastOllamaHealthCheckAt == null ||
+          now.difference(_lastOllamaHealthCheckAt!) > const Duration(seconds: 15);
+
+      bool discovered = true;
+      if (shouldCheckEndpoint) {
+        final discoverSw = Stopwatch()..start();
+        discovered = await _discoverOllamaBaseUrl();
+        discoverSw.stop();
+        _lastOllamaHealthCheckAt = now;
+        _perfLog('descubrimiento_ollama_ms=${discoverSw.elapsedMilliseconds} ok=$discovered base=$_activeOllamaBaseUrl model=$_activeModel');
+      }
+
+      if (!discovered) {
+        if (mounted && _advancedMode) {
+          setState(() => _advancedMode = false);
+        }
+        requestSw.stop();
+        _perfLog('advanced_fallback_local_ms=${requestSw.elapsedMilliseconds} motivo=sin_endpoint');
+        return null;
+      }
 
       final context = _history
           .skip(_history.length > 6 ? _history.length - 6 : 0)
@@ -185,7 +508,7 @@ Eres OpenAI Man, un asistente de voz humano, cercano y claro.
 Reglas:
 - Responde en espanol natural.
 - No repitas literal la pregunta del usuario.
-- Respuestas de 1 a 3 frases, directas y fluidas.
+- Responde completo, sin cortar ideas a la mitad.
 - Enfocate en ayudar sobre productos, pedidos y la app FINATIOL.
 
 Contexto reciente:
@@ -195,37 +518,234 @@ Pregunta actual:
 $prompt
 ''';
 
-      final response = await dio.post(
-        '/api/generate',
-        data: {
-          'model': 'llama3.2',
-          'stream': false,
-          'prompt': composedPrompt,
-          'options': {
-            'temperature': 0.75,
-            'top_p': 0.9,
-            'num_predict': 180,
-          }
-        },
-      );
+      var currentPrompt = composedPrompt;
+      var rounds = 0;
+      var lastDoneReason = '';
+      final fullAnswer = StringBuffer();
 
-      final data = response.data;
-      if (data is Map<String, dynamic>) {
+      while (rounds < 4 && fullAnswer.length < 12000) {
+        final genSw = Stopwatch()..start();
+        final response = await _ollamaDio.post(
+          '$_activeOllamaBaseUrl/api/generate',
+          data: {
+            'model': _activeModel,
+            'stream': false,
+            'prompt': currentPrompt,
+            'keep_alive': '30m',
+            'options': {
+              'temperature': _responseMode == _AiResponseMode.localFast ? 0.35 : 0.55,
+              'top_p': _responseMode == _AiResponseMode.localFast ? 0.8 : 0.9,
+              'num_predict': _responseMode == _AiResponseMode.localFast ? 512 : 896,
+              'num_ctx': _responseMode == _AiResponseMode.localFast ? 1536 : 3072,
+              'repeat_penalty': 1.05,
+            }
+          },
+        );
+        genSw.stop();
+        _perfLog('generacion_ollama_ms=${genSw.elapsedMilliseconds} base=$_activeOllamaBaseUrl model=$_activeModel ronda=$rounds');
+
+        final data = response.data;
+        if (data is! Map<String, dynamic>) break;
+
         final raw = data['response'];
-        if (raw is String && raw.trim().isNotEmpty) {
-          if (mounted && !_advancedMode) {
-            setState(() => _advancedMode = true);
-          }
-          return raw.trim();
+        if (raw is! String || raw.trim().isEmpty) break;
+
+        final merged = _appendWithoutOverlap(fullAnswer.toString(), raw.trim());
+        if (merged.isNotEmpty) {
+          fullAnswer.write(merged);
         }
+
+        final doneReason = (data['done_reason'] ?? '').toString().toLowerCase();
+        final done = data['done'] == true;
+        final byTokenLimit = doneReason.contains('length') || doneReason.contains('max');
+        final textNow = fullAnswer.toString().trim();
+        final looksCut = _looksIncomplete(textNow);
+
+        lastDoneReason = doneReason;
+        rounds += 1;
+
+        if (!(byTokenLimit || (!done && looksCut))) {
+          break;
+        }
+
+        final tail = textNow.length > 900 ? textNow.substring(textNow.length - 900) : textNow;
+        currentPrompt = '''
+Continua exactamente desde donde te quedaste.
+No repitas lo ya dicho.
+Conserva el mismo idioma y tono.
+
+Ultimo fragmento ya generado:
+$tail
+''';
       }
-    } catch (_) {
+
+      final finalText = fullAnswer.toString().trim();
+      if (finalText.isNotEmpty) {
+        if (mounted && !_advancedMode) {
+          setState(() => _advancedMode = true);
+        }
+        _lastAdvancedError = null;
+        requestSw.stop();
+        _perfLog('advanced_ok_total_ms=${requestSw.elapsedMilliseconds} chars=${finalText.length} rondas=$rounds done_reason=$lastDoneReason');
+        return finalText;
+      }
+    } catch (e) {
+      _lastAdvancedError = e.toString();
       if (mounted && _advancedMode) {
         setState(() => _advancedMode = false);
       }
+      requestSw.stop();
+      _perfLog('advanced_error_total_ms=${requestSw.elapsedMilliseconds} error=${e.toString()}');
     }
 
+    requestSw.stop();
+    _perfLog('advanced_empty_total_ms=${requestSw.elapsedMilliseconds}');
+
     return null;
+  }
+
+  Future<String?> _requestCloudFreeReply(String prompt) async {
+    final sw = Stopwatch()..start();
+    final apiKey = _cloudApiKeyCtrl.text.trim();
+    if (apiKey.isEmpty) {
+      _lastAdvancedError =
+          'Para modo nube gratis agrega tu API key gratuita de OpenRouter.';
+      sw.stop();
+      _perfLog('cloud_skip_ms=${sw.elapsedMilliseconds} motivo=sin_api_key');
+      return null;
+    }
+
+    try {
+      final context = _history
+          .skip(_history.length > 6 ? _history.length - 6 : 0)
+          .map((turn) => '${turn.role == 'user' ? 'Usuario' : 'Asistente'}: ${turn.content}')
+          .join('\n');
+
+      var rounds = 0;
+      var finishReason = '';
+      final fullAnswer = StringBuffer();
+      final messages = <Map<String, String>>[
+        {
+          'role': 'system',
+          'content':
+              'Eres OpenAI Man. Responde en espanol natural, completo y sin repetir literal la pregunta.'
+        },
+        {
+          'role': 'user',
+          'content': 'Contexto reciente:\n$context\n\nPregunta actual: $prompt'
+        }
+      ];
+
+      while (rounds < 4 && fullAnswer.length < 12000) {
+        final response = await _ollamaDio.post(
+          'https://openrouter.ai/api/v1/chat/completions',
+          options: Options(
+            headers: {
+              'Authorization': 'Bearer $apiKey',
+              'HTTP-Referer': 'https://finatiol.local',
+              'X-Title': 'FINATIOL OpenAI Man',
+            },
+            sendTimeout: const Duration(seconds: 15),
+            receiveTimeout: const Duration(seconds: 45),
+          ),
+          data: {
+            'model': 'meta-llama/llama-3.2-3b-instruct:free',
+            'temperature': 0.5,
+            'max_tokens': 900,
+            'messages': messages,
+          },
+        );
+
+        final data = response.data;
+        if (data is! Map<String, dynamic>) break;
+
+        final choices = data['choices'];
+        if (choices is! List || choices.isEmpty) break;
+        final first = choices.first;
+        if (first is! Map<String, dynamic>) break;
+
+        final message = first['message'];
+        if (message is! Map<String, dynamic>) break;
+        final content = message['content'];
+        if (content is! String || content.trim().isEmpty) break;
+
+        final merged = _appendWithoutOverlap(fullAnswer.toString(), content.trim());
+        if (merged.isNotEmpty) {
+          fullAnswer.write(merged);
+        }
+
+        final reason = (first['finish_reason'] ?? '').toString().toLowerCase();
+        finishReason = reason;
+        final textNow = fullAnswer.toString().trim();
+        final byTokenLimit = reason.contains('length') || reason.contains('max');
+        final looksCut = _looksIncomplete(textNow);
+
+        rounds += 1;
+        if (!(byTokenLimit || looksCut)) {
+          break;
+        }
+
+        final tail = textNow.length > 900 ? textNow.substring(textNow.length - 900) : textNow;
+        messages.addAll([
+          {'role': 'assistant', 'content': content.trim()},
+          {
+            'role': 'user',
+            'content':
+                'Continua exactamente desde donde te quedaste, sin repetir lo anterior. Ultimo fragmento:\n$tail'
+          }
+        ]);
+      }
+
+      final finalText = fullAnswer.toString().trim();
+      if (finalText.isNotEmpty) {
+        _lastAdvancedError = null;
+        sw.stop();
+        _perfLog('cloud_ok_ms=${sw.elapsedMilliseconds} model=openrouter-free chars=${finalText.length} rondas=$rounds finish_reason=$finishReason');
+        return finalText;
+      }
+    } catch (e) {
+      _lastAdvancedError = 'Nube gratis fallo: ${e.toString()}';
+      sw.stop();
+      _perfLog('cloud_error_ms=${sw.elapsedMilliseconds} error=${e.toString()}');
+      return null;
+    }
+
+    sw.stop();
+    _perfLog('cloud_empty_ms=${sw.elapsedMilliseconds}');
+    return null;
+  }
+
+  void _perfLog(String msg) {
+    if (!_perfLogsEnabled) return;
+    debugPrint('[OpenAI Man][perf] $msg');
+  }
+
+  bool _looksIncomplete(String text) {
+    final clean = text.trim();
+    if (clean.isEmpty) return false;
+    final end = clean[clean.length - 1];
+    return !'.!?)]}"'.contains(end);
+  }
+
+  String _appendWithoutOverlap(String existing, String next) {
+    final left = existing.trimRight();
+    final right = next.trimLeft();
+    if (left.isEmpty) return right;
+    if (right.isEmpty) return '';
+
+    final max = math.min(left.length, right.length);
+    var overlap = 0;
+    for (var size = max; size >= 12; size--) {
+      if (left.substring(left.length - size) == right.substring(0, size)) {
+        overlap = size;
+        break;
+      }
+    }
+
+    if (overlap > 0) {
+      return right.substring(overlap);
+    }
+    return right;
   }
 
   Future<void> _speakSmooth(String text) async {
@@ -236,6 +756,8 @@ $prompt
       if (phrase.isEmpty) continue;
       await _tts.speak(phrase);
     }
+
+    _scheduleAutoListening();
   }
 
   List<String> _chunkText(String text, int maxLen) {
@@ -287,16 +809,9 @@ $prompt
     return 'Entiendo tu consulta. En este momento estoy en modo local y te ayudare de forma clara. Si instalas Ollama en tu equipo, puedo responderte con un modelo mas avanzado y natural sin costo.';
   }
 
-  double _speechLevel() {
-    final wave = math.sin(_pulseController.value * math.pi * 2).abs();
-    if (_isSpeaking) return 0.5 + 0.5 * wave;
-    if (_isListening) return 0.25 + 0.35 * wave;
-    if (_isThinking) return 0.18 + 0.2 * wave;
-    return 0.06 + 0.04 * wave;
-  }
-
   @override
   void dispose() {
+    _cloudApiKeyCtrl.dispose();
     _pulseController.dispose();
     _speech.stop();
     _tts.stop();
@@ -309,11 +824,12 @@ $prompt
       backgroundColor: const Color(0xFF02130A),
       body: Stack(
         children: [
+          const Positioned.fill(child: _OpenAiWomanBackground()),
           const Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [Color(0xFF010F09), Color(0xFF032316), Color(0xFF05170F)],
+                  colors: [Color(0xCC020A12), Color(0xB0021422), Color(0xCC010B14)],
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                 ),
@@ -322,26 +838,9 @@ $prompt
           ),
           const Positioned.fill(
             child: _MatrixRainLayer(
-              columns: 28,
-              color: Color(0x9926F2A5),
-              fontSize: 13,
-            ),
-          ),
-          Positioned.fill(
-            child: Padding(
-              padding: const EdgeInsets.all(10),
-              child: AnimatedBuilder(
-                animation: _pulseController,
-                builder: (context, _) => _SilhouettePanel(
-                  speechLevel: _speechLevel(),
-                  active: _isListening || _isSpeaking || _isThinking,
-                  child: const _MatrixRainLayer(
-                    columns: 40,
-                    color: Color(0xFF56FFBE),
-                    fontSize: 14,
-                  ),
-                ),
-              ),
+              columns: 22,
+              color: Color(0x6636E3FF),
+              fontSize: 12,
             ),
           ),
           SafeArea(
@@ -382,7 +881,9 @@ $prompt
                           ),
                         ),
                         child: Text(
-                          _advancedMode ? 'MODO AVANZADO' : 'MODO LOCAL',
+                          _advancedMode
+                              ? 'MODO AVANZADO (${_activeModel.split(':').first})'
+                              : 'MODO LOCAL',
                           style: const TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
@@ -406,56 +907,186 @@ $prompt
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: const Color(0x6658FFBE)),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (_recognized.trim().isNotEmpty) ...[
-                          const Text(
-                            'Tu voz',
-                            style: TextStyle(
-                              color: Color(0xFF9EFAD0),
-                              fontWeight: FontWeight.w700,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(context).size.height * 0.36,
+                      ),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (_recognized.trim().isNotEmpty) ...[
+                              const Text(
+                                'Tu voz',
+                                style: TextStyle(
+                                  color: Color(0xFF9EFAD0),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _recognized,
+                                style: const TextStyle(
+                                  color: Color(0xFFE7FFF4),
+                                  height: 1.4,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                            ],
+                            const Text(
+                              'OpenAI Man',
+                              style: TextStyle(
+                                color: Color(0xFF9EFAD0),
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _recognized,
-                            style: const TextStyle(
-                              color: Color(0xFFE7FFF4),
-                              height: 1.4,
+                            const SizedBox(height: 4),
+                            Text(
+                              _assistantMessage,
+                              style: const TextStyle(
+                                color: Color(0xFFE7FFF4),
+                                height: 1.4,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 10),
-                        ],
-                        const Text(
-                          'OpenAI Man',
-                          style: TextStyle(
-                            color: Color(0xFF9EFAD0),
-                            fontWeight: FontWeight.w700,
-                          ),
+                            if (!_advancedMode) ...[
+                              const SizedBox(height: 8),
+                              const Text(
+                                'Si instalamos Ollama + llama3.2 podemos hablar mas fluido y de cualquier tema, sin pago.',
+                                style: TextStyle(
+                                  color: Color(0xFF86D9BA),
+                                  fontSize: 12,
+                                ),
+                              ),
+                              if (_lastAdvancedError != null) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Diagnostico: $_lastAdvancedError',
+                                  style: const TextStyle(
+                                    color: Color(0xFFB4E9D5),
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ],
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _assistantMessage,
-                          style: const TextStyle(
-                            color: Color(0xFFE7FFF4),
-                            height: 1.4,
-                          ),
-                        ),
-                        if (!_advancedMode) ...[
-                          const SizedBox(height: 8),
-                          const Text(
-                            'Tip: instala Ollama + llama3.2 para respuestas mas humanas sin pago.',
-                            style: TextStyle(
-                              color: Color(0xFF86D9BA),
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 14),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xA8122E23),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0x6658FFBE)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.tune_rounded,
+                            size: 18, color: Color(0xFF9EFAD0)),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Modo IA',
+                          style: TextStyle(
+                            color: Color(0xFFE7FFF4),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<_AiResponseMode>(
+                              value: _responseMode,
+                              isExpanded: true,
+                              dropdownColor: const Color(0xFF123325),
+                              style: const TextStyle(color: Color(0xFFE7FFF4)),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: _AiResponseMode.localFast,
+                                  child: Text('Local rapido'),
+                                ),
+                                DropdownMenuItem(
+                                  value: _AiResponseMode.localBalanced,
+                                  child: Text('Local balanceado'),
+                                ),
+                                DropdownMenuItem(
+                                  value: _AiResponseMode.cloudFree,
+                                  child: Text('Nube gratis'),
+                                ),
+                              ],
+                              onChanged: (value) {
+                                if (value == null) return;
+                                setState(() => _responseMode = value);
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_responseMode == _AiResponseMode.cloudFree) ...[
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _cloudApiKeyCtrl,
+                      obscureText: true,
+                      decoration: InputDecoration(
+                        labelText: 'API key OpenRouter (gratis)',
+                        labelStyle: const TextStyle(color: Color(0xFFBCECD9)),
+                        hintText: 'sk-or-v1-...',
+                        hintStyle: const TextStyle(color: Color(0x889DD9C3)),
+                        filled: true,
+                        fillColor: const Color(0xA8122E23),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0x6658FFBE)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0x6658FFBE)),
+                        ),
+                      ),
+                      style: const TextStyle(color: Color(0xFFE7FFF4)),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xA8122E23),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0x6658FFBE)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.all_inclusive_rounded,
+                            size: 18, color: Color(0xFF9EFAD0)),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'Modo continuo (manos libres)',
+                            style: TextStyle(
+                              color: Color(0xFFE7FFF4),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        Switch.adaptive(
+                          value: _continuousMode,
+                          onChanged: (value) async {
+                            setState(() => _continuousMode = value);
+                            if (value && !_isListening && !_isSpeaking && !_isThinking) {
+                              await _startListening(showPrompt: true);
+                            }
+                          },
+                          activeThumbColor: const Color(0xFF52FFB6),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
@@ -513,168 +1144,26 @@ class _StatusDot extends StatelessWidget {
   }
 }
 
-class _SilhouettePanel extends StatelessWidget {
-  const _SilhouettePanel({
-    required this.child,
-    required this.speechLevel,
-    required this.active,
-  });
-
-  final Widget child;
-  final double speechLevel;
-  final bool active;
+class _OpenAiWomanBackground extends StatelessWidget {
+  const _OpenAiWomanBackground();
 
   @override
   Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: Center(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final width = constraints.maxWidth * 0.92;
-            final height = constraints.maxHeight * 0.9;
-
-            return SizedBox(
-              width: width,
-              height: height,
-              child: Stack(
-                children: [
-                  ClipPath(
-                    clipper: _FaceSilhouetteClipper(),
-                    child: DecoratedBox(
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Color(0xFF00150B), Color(0xFF012C18), Color(0xFF00150B)],
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                        ),
-                      ),
-                      child: child,
-                    ),
-                  ),
-                  CustomPaint(
-                    size: Size(width, height),
-                    painter: _SilhouetteOutlinePainter(
-                      speechLevel: speechLevel,
-                      active: active,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-      ),
+    return Image.asset(
+      'assets/images/openai_woman_bg.png',
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        return const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF0A1320), Color(0xFF102237), Color(0xFF07111D)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+        );
+      },
     );
-  }
-}
-
-class _FaceSilhouetteClipper extends CustomClipper<Path> {
-  @override
-  Path getClip(Size size) {
-    return Path()
-      ..moveTo(size.width * 0.24, size.height * 0.92)
-      ..quadraticBezierTo(
-          size.width * 0.29, size.height * 0.7, size.width * 0.41, size.height * 0.57)
-      ..quadraticBezierTo(
-          size.width * 0.44, size.height * 0.52, size.width * 0.44, size.height * 0.46)
-      ..quadraticBezierTo(
-          size.width * 0.37, size.height * 0.36, size.width * 0.39, size.height * 0.24)
-      ..quadraticBezierTo(
-          size.width * 0.43, size.height * 0.11, size.width * 0.50, size.height * 0.08)
-      ..quadraticBezierTo(
-          size.width * 0.57, size.height * 0.11, size.width * 0.61, size.height * 0.24)
-      ..quadraticBezierTo(
-          size.width * 0.63, size.height * 0.36, size.width * 0.56, size.height * 0.46)
-      ..quadraticBezierTo(
-          size.width * 0.56, size.height * 0.52, size.width * 0.59, size.height * 0.57)
-      ..quadraticBezierTo(
-          size.width * 0.71, size.height * 0.70, size.width * 0.76, size.height * 0.92)
-      ..close();
-  }
-
-  @override
-  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
-}
-
-class _SilhouetteOutlinePainter extends CustomPainter {
-  _SilhouetteOutlinePainter({
-    required this.speechLevel,
-    required this.active,
-  });
-
-  final double speechLevel;
-  final bool active;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final path = _FaceSilhouetteClipper().getClip(size);
-    final stroke = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.4
-      ..color = active ? const Color(0xCC58FFBE) : const Color(0x8858FFBE)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.8);
-
-    final glow = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = active ? 9 : 6
-      ..color = const Color(0x2258FFBE)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
-
-    canvas.drawPath(path, glow);
-    canvas.drawPath(path, stroke);
-
-    final featurePaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6
-      ..color = const Color(0xBB88FFD3)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.2);
-
-    final fillPaint = Paint()
-      ..style = PaintingStyle.fill
-      ..color = const Color(0x3348FFB2);
-
-    final leftEye = Offset(size.width * 0.46, size.height * 0.29);
-    final rightEye = Offset(size.width * 0.54, size.height * 0.29);
-    canvas.drawCircle(leftEye, 4, featurePaint);
-    canvas.drawCircle(rightEye, 4, featurePaint);
-
-    final nosePath = Path()
-      ..moveTo(size.width * 0.5, size.height * 0.30)
-      ..lineTo(size.width * 0.495, size.height * 0.34)
-      ..lineTo(size.width * 0.505, size.height * 0.34);
-    canvas.drawPath(nosePath, featurePaint);
-
-    final mouthY = size.height * 0.385;
-    final mouthOpen = 2.5 + (speechLevel * 11);
-    final mouthRect = Rect.fromCenter(
-      center: Offset(size.width * 0.5, mouthY),
-      width: size.width * 0.09,
-      height: mouthOpen,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(mouthRect, const Radius.circular(6)),
-      fillPaint,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(mouthRect, const Radius.circular(6)),
-      featurePaint,
-    );
-
-    final jawGlow = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2
-      ..color = const Color(0x7748FFB2);
-    final jawPath = Path()
-      ..moveTo(size.width * 0.44, size.height * 0.42)
-      ..quadraticBezierTo(
-          size.width * 0.50, size.height * 0.46, size.width * 0.56, size.height * 0.42);
-    canvas.drawPath(jawPath, jawGlow);
-  }
-
-  @override
-  bool shouldRepaint(covariant _SilhouetteOutlinePainter oldDelegate) {
-    return oldDelegate.speechLevel != speechLevel ||
-        oldDelegate.active != active;
   }
 }
 
